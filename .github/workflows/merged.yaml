@@ -12,7 +12,7 @@ on:
 jobs:
   merge:
     if: ${{ (github.event.action != 'completed' && github.event.pull_request.head.ref || github.event.check_suite.head_branch) == github.event.repository.default_branch }}
-    runs-on: Linux_x86_Ubuntu24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
