@@ -16,24 +16,28 @@ jobs:
     steps:
     - id: poll_status
       if: ${{ github.event.action == 'submitted' && github.event.review.state == 'approved' }}
+      env:
+        PR_REF=${{ github.event.pull_request.head.ref }}
       run: |
         curl -L \
         -H "Accept: application/vnd.github+json" \
         -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
-        ${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${{ github.event.pull_request.head.ref }}/status \
+        ${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${PR_REF}/status \
         -o "${{ runner.temp }}/status.json"
         status=$(jq '.state=="success"' < "${{ runner.temp }}/status.json")
         echo "MERGE=${status}" >> "${GITHUB_ENV}"
 
     - id: poll_reviews
       if: ${{ github.event.action == 'completed' && github.event.check_suite.conclusion == 'success' }}
+      env:
+        PR_REF=${{ github.event.check_suite.pull_requests[0].number }}
       run: |
         curl -L \
         -H "Accept: application/vnd.github+json" \
         -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
-        ${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.check_suite.pull_requests[0].number }}/reviews \
+        ${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls/${PR_REF}/reviews \
         -o "${{ runner.temp }}/reviews.json"
         check=$(jq '[map(.state=="APPROVED")|all,(length>=2)]|all' < "${{ runner.temp }}/reviews.json")
         echo "MERGE=${check}" >> "${GITHUB_ENV}"
