@@ -3,67 +3,40 @@ on:
   check_suite:
     types:
     - completed
-  pull_request:
-    types:
-    - edited
-    - synchronize
   pull_request_review:
     types:
     - submitted
 jobs:
   merge:
-    if: ${{ (github.event.action != 'completed' && github.event.pull_request.head.ref || github.event.check_suite.head_branch) == github.event.repository.default_branch }}
+    if: ${{ (github.event.action == 'completed' && github.event.check_suite.head_branch || github.event.pull_request.head.ref) == github.event.repository.default_branch }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
-    env:
-      UPDATE: ${{ contains(fromJson('["edited", "synchronize"]'), github.event.action) }}
-      PR: ${{ github.event.action == 'completed' && github.event.check_suite.pull_requests[0].number || github.event.pull_request.number }}
+      pull-requests: read
     steps:
-    - id: add_reviewed_label
+    - id: poll_status
       if: ${{ github.event.action == 'submitted' && github.event.review.state == 'approved' }}
       run: |
-        curl -L -X POST -H "Accept: application/vnd.github+json" \
-          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-          -H "X-GitHub-Api-Version: 2022-11-28" \
-          "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${{ env.PR }}/labels" \
-          -d '{"labels":[":detective:"]}'
-        echo "MERGE=${{ contains(github.event.pull_request.labels,':gear:') }}" >> "${GITHUB_ENV}"
+        curl -L \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        ${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${{ github.event.pull_request.head.ref }}/status \
+        -o "${{ runner.temp }}/status.json"
+        status=$(jq '.state=="success"' < "${{ runner.temp }}/status.json")
+        echo "MERGE=${status}" >> "${GITHUB_ENV}"
 
-    - id: remove_reviewed_label
-      if: ${{ github.event.action == 'submitted' && github.event.review.state != 'approved' || env.UPDATE == 'true' }}
-      run: |
-        curl -L -X DELETE -H "Accept: application/vnd.github+json" \
-          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-          -H "X-GitHub-Api-Version: 2022-11-28" \
-          "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${{ github.event.pull_request.number }}/labels/%3Adetective%3A"
-        echo "MERGE=false" >> "${GITHUB_ENV}"
-
-    - id: add_checked_label
+    - id: poll_reviews
       if: ${{ github.event.action == 'completed' && github.event.check_suite.conclusion == 'success' }}
       run: |
-        curl -L -X POST -H "Accept: application/vnd.github+json" \
-          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-          -H "X-GitHub-Api-Version: 2022-11-28" \
-          "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${{ env.PR }}/labels" \
-          -d '{"labels":[":gear:"]}'
-        hasReview=$(curl -L -X GET -H "Accept: application/vnd.github+json" \
-          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-          -H "X-GitHub-Api-Version: 2022-11-28" \
-          "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${{ env.PR }}/labels" \
-        | jq '(.[]|select(.name==":detective:")|any)')
-        echo "MERGE=${hasReview}"
-        echo "MERGE=${hasReview}" >> "${GITHUB_ENV}"
-
-    - id: remove_checked_label
-      if: ${{ github.event.action == 'completed' && github.event.check_suite.conclusion != 'success' || env.UPDATE == 'true' }}
-      run: |
-        curl -L -X DELETE -H "Accept: application/vnd.github+json" \
-          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-          -H "X-GitHub-Api-Version: 2022-11-28" \
-          "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${{ env.PR }}/labels/%3Agear%3A"
-        echo "MERGE=false" >> "${GITHUB_ENV}"
+        curl -L \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        ${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.check_suite.pull_requests[0].number }}/reviews \
+        -o "${{ runner.temp }}/reviews.json"
+        check=$(jq '[map(.state=="APPROVED")|all,(length>=2)]|all' < "${{ runner.temp }}/reviews.json")
+        echo "MERGE=${check}" >> "${GITHUB_ENV}"
 
     - name: Checkout code into workspace directory
       if: ${{ env.MERGE == 'true' }}
