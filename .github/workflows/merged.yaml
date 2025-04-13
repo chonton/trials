@@ -17,7 +17,7 @@ jobs:
     - id: poll_status
       if: ${{ github.event.action == 'submitted' && github.event.review.state == 'approved' }}
       env:
-        PR_REF=${{ github.event.pull_request.head.ref }}
+        PR_REF: ${{ github.event.pull_request.head.ref }}
       run: |
         curl -L \
         -H "Accept: application/vnd.github+json" \
@@ -31,7 +31,7 @@ jobs:
     - id: poll_reviews
       if: ${{ github.event.action == 'completed' && github.event.check_suite.conclusion == 'success' }}
       env:
-        PR_REF=${{ github.event.check_suite.pull_requests[0].number }}
+        PR_REF: ${{ github.event.check_suite.pull_requests[0].number }}
       run: |
         curl -L \
         -H "Accept: application/vnd.github+json" \
